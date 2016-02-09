@@ -11,9 +11,12 @@ run(F,A) -> do_run(F, lists:ukeysort(1, A++def_args())).
 do_run(F,A) ->
   {ok, _} = yamq_dets_store:start_link("foo.dets"),
   {ok, _} = yamq:start_link(A),
-  F(),
-  catch yamq:stop(),
-  catch yamq_dets_store:stop().
+  try
+    F()
+  after
+      catch yamq:stop(),
+      catch yamq_dets_store:stop()
+  end.
 
 
 def_args() ->

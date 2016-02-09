@@ -1,25 +1,19 @@
-suite=$(if $(SUITE), suite=$(SUITE), )
+PROJECT = yamq
 
-.PHONY:	all deps check test clean
+# Options ##############################################################
+COMPILE_FLAGS = -DS2_USE_LAGER
+EUNIT_OPTS    = [verbose]
+ERLC_OPTS    ?= -Werror +debug_info +warn_export_all +warn_export_vars \
+                +warn_shadow_vars +warn_obsolete_guard +warnings_as_errors \
+                -DS2_USE_LAGER
 
-all: deps
-	./rebar compile
+# Dependecies ##########################################################
+DEPS = lager stdlib2
 
-deps:
-	./rebar get-deps
+dep_lager   = git git@github.com:kivra/lager.git   3.0.1
+dep_stdlib2 = git git@github.com:kivra/stdlib2.git master
 
-docs:
-	./rebar doc
-
-check:
-	./rebar check-plt
-	./rebar dialyze
-
-test:
-	./rebar eunit $(suite) skip_deps=true
-
-clean:
-	./rebar clean
-	$(RM) doc/*
+# Standard targets #####################################################
+include erlang.mk
 
 # eof
