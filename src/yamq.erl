@@ -180,11 +180,12 @@ q_init() ->
 
 q_load(Store) ->
   {ok, Keys} = Store:list(),
-  lists:foldl(fun(Info, Heads) -> q_insert(Info, Heads) end, [], Keys).
+  lists:foldl(
+    fun(Info, Heads) -> q_insert(decode_key(Info), Heads) end, [], Keys).
 
-q_insert({K,P,D,S}, Heads0) ->
+q_insert({R,K,P,D,S}, Heads0) ->
   Queue = q_p2q(P),
-  true  = ets:insert_new(Queue, {{D,K},S}),
+  true  = ets:insert_new(Queue, {{R,D,K},S}),
   case lists:keytake(Queue, 1, Heads0) of
     {value, {Queue,DP}, _Heads} when DP =< D -> Heads0;
     {value, {Queue,DP},  Heads} when DP >= D -> [{Queue,D}|Heads];
@@ -210,26 +211,26 @@ q_pick(Ready) ->
   Q.
 
 q_take_next(Q, Heads0) ->
-  {D,K}       = ets:first(Q),
-  [{{D,K},S}] = ets:lookup(Q, {D,K}),
-  true        = ets:delete(Q, {D,K}),
-  Heads       = lists:keydelete(Q, 1, Heads0),
+  {R,D,K}       = ets:first(Q),
+  [{{R,D,K},S}] = ets:lookup(Q, {R,D,K}),
+  true          = ets:delete(Q, {R,D,K}),
+  Heads         = lists:keydelete(Q, 1, Heads0),
   case ets:first(Q) of
-    '$end_of_table' -> {{K,q_q2p(Q),D,S}, Heads};
-    {ND,_NK}        -> {{K,q_q2p(Q),D,S}, [{Q,ND}|Heads]}
+    '$end_of_table' -> {{R,K,q_q2p(Q),D,S}, Heads};
+    {ND,_NK}        -> {{R,K,q_q2p(Q),D,S}, [{Q,ND}|Heads]}
   end.
 
 %% NOTE: This feature is not meant to be heavily used as moving
 %% tasks back and forth is quite expensive.
-q_next_is_blocked({_,_,_,[]},      Blocked) -> {false, Blocked};
-q_next_is_blocked({_,_,_,S }=Info, Blocked) ->
+q_next_is_blocked({_,_,_,_,[]},      Blocked) -> {false, Blocked};
+q_next_is_blocked({_,_,_,_,S }=Info, Blocked) ->
   case dict:is_key(S, Blocked) of
     true  -> {true,  dict:update(S, fun(L) -> [Info|L] end, Blocked)};
     false -> {false, dict:store(S, [], Blocked)}
   end.
 
-q_unblock({_,_,_,[]}, Heads,  Blocked) -> {Heads, Blocked};
-q_unblock({_,_,_,S }, Heads0, Blocked) ->
+q_unblock({_,_,_,_,[]}, Heads,  Blocked) -> {Heads, Blocked};
+q_unblock({_,_,_,_,S }, Heads0, Blocked) ->
   {lists:foldl(fun(Info, Heads) ->
                    q_insert(Info, Heads)
                end, Heads0, dict:fetch(S, Blocked)),
@@ -280,7 +281,7 @@ spawn_worker(Store, Fun, Info) ->
   Daddy = erlang:self(),
   erlang:spawn_link(
     fun() ->
-        {ok, Task} = Store:get(Info),
+        {ok, Task} = Store:get(encode_key(Info)),
         ok         = Fun(Task),
         ok         = Store:delete(Info),
         ok         = gen_server:cast(Daddy, {done, {erlang:self(), Info}})
@@ -293,11 +294,23 @@ spawn_store(Store, Task, Options, From) ->
         {ok, Priority}  = s2_lists:assoc(Options, priority),
         {ok, Due}       = s2_lists:assoc(Options, due),
         {ok, Serialize} = s2_lists:assoc(Options, serialize),
-        Info            = {s2_time:stamp(), Priority, Due, Serialize},
-        ok   = Store:put(Info, Task),
+        Info            = { s2_rand:int()
+                          , s2_time:stamp()
+                          , Priority
+                          , Due
+                          , Serialize },
+        ok   = Store:put(encode_key(Info), Task),
         ok   = gen_server:cast(Daddy, {enqueued, {erlang:self(), Info}}),
         _    = gen_server:reply(From, ok) %tell caller we are done
     end).
+
+encode_key({R,K,P,D,S}) ->
+  << (integer_to_binary(R))/binary,(integer_to_binary(K))/binary
+   , (integer_to_binary(P))/binary,(integer_to_binary(D))/binary,"|",S/binary>>.
+
+decode_key(<<R:16/binary,K:16/binary,P:1/binary,DS/binary>>) ->
+  [D, S] = binary:split(DS, <<"|">>),
+  {R,K,P,D,S}.
 
 %%%_* Tests ============================================================
 -ifdef(TEST).
