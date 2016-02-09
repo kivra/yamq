@@ -305,12 +305,12 @@ spawn_store(Store, Task, Options, From) ->
     end).
 
 encode_key({R,K,P,D,S}) ->
-  << (integer_to_binary(R))/binary,(integer_to_binary(K))/binary
-   , (integer_to_binary(P))/binary,(integer_to_binary(D))/binary,"|",S/binary>>.
+  << (?i2b(R))/binary,(?i2b(K))/binary
+   , (?i2b(P))/binary,(?i2b(D))/binary,"|",S/binary>>.
 
 decode_key(<<R:16/binary,K:16/binary,P:1/binary,DS/binary>>) ->
   [D, S] = binary:split(DS, <<"|">>),
-  {R,K,P,D,S}.
+  {?b2i(R),?b2i(K),?b2i(P),?b2i(D),S}.
 
 %%%_* Tests ============================================================
 -ifdef(TEST).
