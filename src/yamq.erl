@@ -170,7 +170,7 @@ wait(_WFree, [{_QS,DS}|Hs]) ->
                       ({_Q,_D},Acc)              -> Acc
                    end, DS, Hs) of
     0   -> 0;
-    Min -> lists:max([0, (Min - s2_time:stamp() div 1000)+1])
+    Min -> max(0, ((Min - s2_time:stamp()) div 1000)+1)
   end.
 
 q_init() ->
@@ -308,13 +308,21 @@ encode_key({R,K,P,D,S}) ->
   << (?i2b(R))/binary,(?i2b(K))/binary
    , (?i2b(P))/binary,(?i2b(D))/binary,"|",S/binary>>.
 
-decode_key(<<R:16/binary,K:16/binary,P:1/binary,DS/binary>>) ->
+decode_key(<<R:38/binary,K:16/binary,P:1/binary,DS/binary>>) ->
   [D, S] = binary:split(DS, <<"|">>),
   {?b2i(R),?b2i(K),?b2i(P),?b2i(D),S}.
 
 %%%_* Tests ============================================================
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+
+key_test() ->
+  R = s2_rand:int(),
+  K = s2_time:stamp(),
+  P = 3,
+  D = 2,
+  S = <<"blargh">>,
+  {R,K,P,D,S} = decode_key(encode_key({R,K,P,D,S})).
 
 basic_test() ->
   yamq_test:run(
