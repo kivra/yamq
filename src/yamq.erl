@@ -281,9 +281,10 @@ spawn_worker(Store, Fun, Info) ->
   Daddy = erlang:self(),
   erlang:spawn_link(
     fun() ->
-        {ok, Task} = Store:get(encode_key(Info)),
+        Key        = encode_key(Info),
+        {ok, Task} = Store:get(Key),
         ok         = Fun(Task),
-        ok         = Store:delete(Info),
+        ok         = Store:delete(Key),
         ok         = gen_server:cast(Daddy, {done, {erlang:self(), Info}})
     end).
 
