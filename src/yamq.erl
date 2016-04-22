@@ -101,8 +101,8 @@ handle_call({enqueue, Task, Options} = C, From, #s{store=Store} = S) ->
 handle_call(size, _From, S) ->
   ?debug("handle_call: size"),
   {reply, q_size(S#s.blocked), S, wait(S#s.wfree, S#s.heads)};
-handle_call(state, _From, S) -
-  ?debug("handle_call: state"),>
+handle_call(state, _From, S) ->
+  ?debug("handle_call: state"),
   %% Return state for debugging purposes
   State = [ {store, S#s.store}
           , {func, S#s.func}
@@ -164,7 +164,7 @@ handle_info(timeout, S) ->
   ?hence(S#s.wfree > 0),
   case q_next(S#s.heads, S#s.blocked) of
     {ok, {Info, Heads, Blocked}} ->
-      ?debug"next: ~p", [Info]),
+      ?debug("next: ~p", [Info]),
       Pid   = spawn_worker(S#s.store, S#s.func, Info),
       N     = S#s.wfree - 1,
       {noreply, S#s{wfree   = N,
