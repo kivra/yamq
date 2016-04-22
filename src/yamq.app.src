@@ -1,8 +1,9 @@
 {application, yamq,
- [ {description,  ""}
- , {vsn,          git}
+ [ {description,  "yamq"}
+ , {vsn,          "git"}
  , {registered,   []}
  , {applications, [kernel, stdlib]}
  , {env,          []}
+ , {modules,      []}
  ]
 }.

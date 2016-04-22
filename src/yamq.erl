@@ -84,27 +84,46 @@ init(Args) ->
          , heads = Heads
          }, wait(N, Heads)}.
 
-terminate(_Rsn, S) ->
+terminate(Rsn, S) ->
+  ?info("terminate: ~p", [Rsn]),
   ?info("waiting for ~p workers to finish", [length(S#s.wpids)]),
   ?info("waiting for ~p enqueue requests to finish", [length(S#s.spids)]),
   lists:foreach(fun(Pid) ->
                     receive {'EXIT', Pid, _Rsn} -> ok end
                 end,
-                S#s.wpids ++ S#s.spids).
+                S#s.wpids ++ S#s.spids),
+  ?info("terminated").
 
-handle_call({enqueue, Task, Options}, From, #s{store=Store} = S) ->
+handle_call({enqueue, Task, Options} = C, From, #s{store=Store} = S) ->
+  ?debug("handle_call: ~p", [C]),
   Pid = spawn_store(Store, Task, Options, From),
   {noreply, S#s{spids=[Pid|S#s.spids]}, wait(S#s.wfree, S#s.heads)};
 handle_call(size, _From, S) ->
+  ?debug("handle_call: size"),
   {reply, q_size(S#s.blocked), S, wait(S#s.wfree, S#s.heads)};
+handle_call(state, _From, S) -
+  ?debug("handle_call: state"),>
+  %% Return state for debugging purposes
+  State = [ {store, S#s.store}
+          , {func, S#s.func}
+          , {spids, S#s.spids}
+          , {wpids, S#s.wpids}
+          , {wfree, S#s.wfree}
+          , {heads, S#s.heads}
+          , {blocked, S#s.blocked}
+          ],
+  {reply, State, S, wait(S#s.wfree, S#s.heads)};
 handle_call(stop, _From, S) ->
+  ?debug("handle_call: stop"),
   {stop, normal, ok, S}.
 
-handle_cast({enqueued, {Pid, Info}}, S) ->
+handle_cast({enqueued, {Pid, Info}} = C, S) ->
+  ?debug("handle_cast: ~p", [C]),
   ?hence(lists:member(Pid, S#s.spids)),
   Heads = q_insert(Info, S#s.heads),
   {noreply, S#s{heads=Heads}, wait(S#s.wfree, Heads)};
-handle_cast({done, {Pid, Info}}, S) ->
+handle_cast({done, {Pid, Info}} = C, S) ->
+  ?debug("handle_cast: ~p", [C]),
   ?hence(lists:member(Pid, S#s.wpids)),
   {Heads0, Blocked0} = q_unblock(Info, S#s.heads, S#s.blocked),
   case q_next(Heads0, Blocked0) of
@@ -120,16 +139,19 @@ handle_cast({done, {Pid, Info}}, S) ->
                    }, wait(S#s.wfree + 1, Heads)}
   end;
 handle_cast(Msg, S) ->
+  ?debug("handle_cast: ~p", [Msg]),
   {stop, {bad_cast, Msg}, S}.
 
-handle_info({'EXIT', Pid, normal}, S) ->
+handle_info({'EXIT', Pid, normal} = C, S) ->
+  ?debug("handle_info: ~p", [C]),
   case {lists:member(Pid, S#s.wpids), lists:member(Pid, S#s.spids)} of
     {true, false} ->
       {noreply, S#s{wpids=S#s.wpids -- [Pid]}, wait(S#s.wfree, S#s.heads)};
     {false, true} ->
       {noreply, S#s{spids=S#s.spids -- [Pid]}, wait(S#s.wfree, S#s.heads)}
   end;
-handle_info({'EXIT', Pid, Rsn}, S) ->
+handle_info({'EXIT', Pid, Rsn} = C, S) ->
+  ?debug("handle_info: ~p", [C]),
   case {lists:member(Pid, S#s.spids), lists:member(Pid, S#s.wpids)} of
     {true, false} ->
       ?warning("writer died: ~p", [Rsn]),
@@ -142,6 +164,7 @@ handle_info(timeout, S) ->
   ?hence(S#s.wfree > 0),
   case q_next(S#s.heads, S#s.blocked) of
     {ok, {Info, Heads, Blocked}} ->
+      ?debug"next: ~p", [Info]),
       Pid   = spawn_worker(S#s.store, S#s.func, Info),
       N     = S#s.wfree - 1,
       {noreply, S#s{wfree   = N,
@@ -170,7 +193,7 @@ wait(_WFree, [{_QS,DS}|Hs]) ->
                       ({_Q,_D},Acc)              -> Acc
                    end, DS, Hs) of
     0   -> 0;
-    Min -> lists:max([0, (Min - s2_time:stamp() div 1000)+1])
+    Min -> max(0, ((Min - s2_time:stamp()) div 1000)+1)
   end.
 
 q_init() ->
@@ -180,11 +203,12 @@ q_init() ->
 
 q_load(Store) ->
   {ok, Keys} = Store:list(),
-  lists:foldl(fun(Info, Heads) -> q_insert(Info, Heads) end, [], Keys).
+  lists:foldl(
+    fun(Info, Heads) -> q_insert(decode_key(Info), Heads) end, [], Keys).
 
-q_insert({K,P,D,S}, Heads0) ->
+q_insert({R,K,P,D,S}, Heads0) ->
   Queue = q_p2q(P),
-  true  = ets:insert_new(Queue, {{D,K},S}),
+  true  = ets:insert_new(Queue, {{D,K,R},S}),
   case lists:keytake(Queue, 1, Heads0) of
     {value, {Queue,DP}, _Heads} when DP =< D -> Heads0;
     {value, {Queue,DP},  Heads} when DP >= D -> [{Queue,D}|Heads];
@@ -210,26 +234,26 @@ q_pick(Ready) ->
   Q.
 
 q_take_next(Q, Heads0) ->
-  {D,K}       = ets:first(Q),
-  [{{D,K},S}] = ets:lookup(Q, {D,K}),
-  true        = ets:delete(Q, {D,K}),
-  Heads       = lists:keydelete(Q, 1, Heads0),
+  {D,K,R}       = ets:first(Q),
+  [{{D,K,R},S}] = ets:lookup(Q, {D,K,R}),
+  true          = ets:delete(Q, {D,K,R}),
+  Heads         = lists:keydelete(Q, 1, Heads0),
   case ets:first(Q) of
-    '$end_of_table' -> {{K,q_q2p(Q),D,S}, Heads};
-    {ND,_NK}        -> {{K,q_q2p(Q),D,S}, [{Q,ND}|Heads]}
+    '$end_of_table' -> {{R,K,q_q2p(Q),D,S}, Heads};
+    {ND,_NK,_NR}    -> {{R,K,q_q2p(Q),D,S}, [{Q,ND}|Heads]}
   end.
 
 %% NOTE: This feature is not meant to be heavily used as moving
 %% tasks back and forth is quite expensive.
-q_next_is_blocked({_,_,_,[]},      Blocked) -> {false, Blocked};
-q_next_is_blocked({_,_,_,S }=Info, Blocked) ->
+q_next_is_blocked({_,_,_,_,[]},      Blocked) -> {false, Blocked};
+q_next_is_blocked({_,_,_,_,S }=Info, Blocked) ->
   case dict:is_key(S, Blocked) of
     true  -> {true,  dict:update(S, fun(L) -> [Info|L] end, Blocked)};
     false -> {false, dict:store(S, [], Blocked)}
   end.
 
-q_unblock({_,_,_,[]}, Heads,  Blocked) -> {Heads, Blocked};
-q_unblock({_,_,_,S }, Heads0, Blocked) ->
+q_unblock({_,_,_,_,[]}, Heads,  Blocked) -> {Heads, Blocked};
+q_unblock({_,_,_,_,S }, Heads0, Blocked) ->
   {lists:foldl(fun(Info, Heads) ->
                    q_insert(Info, Heads)
                end, Heads0, dict:fetch(S, Blocked)),
@@ -272,7 +296,7 @@ opt_validate({serialize, S})
 opt_def() ->
   [{priority,  8},
    {due,       0},
-   {serialize, []}
+   {serialize, <<"null">>}
   ].
 
 %%%_ * Internals workers/storage ---------------------------------------
@@ -280,10 +304,18 @@ spawn_worker(Store, Fun, Info) ->
   Daddy = erlang:self(),
   erlang:spawn_link(
     fun() ->
-        {ok, Task} = Store:get(Info),
-        ok         = Fun(Task),
-        ok         = Store:delete(Info),
-        ok         = gen_server:cast(Daddy, {done, {erlang:self(), Info}})
+        Key = encode_key(Info),
+        case Store:get(Key) of
+          {ok, Task} ->
+            ok = Fun(Task),
+            ok = Store:delete(Key),
+            ok = gen_server:cast(Daddy, {done, {erlang:self(), Info}});
+          {error, notfound} ->
+            ?info("key not found: ~p", [Key]),
+            %% Stale index
+            ok = Store:delete(Key),
+            ok = gen_server:cast(Daddy, {done, {erlang:self(), Info}})
+        end
     end).
 
 spawn_store(Store, Task, Options, From) ->
@@ -293,15 +325,47 @@ spawn_store(Store, Task, Options, From) ->
         {ok, Priority}  = s2_lists:assoc(Options, priority),
         {ok, Due}       = s2_lists:assoc(Options, due),
         {ok, Serialize} = s2_lists:assoc(Options, serialize),
-        Info            = {s2_time:stamp(), Priority, Due, Serialize},
-        ok   = Store:put(Info, Task),
+        Info            = { rand_int()
+                          , s2_time:stamp()
+                          , Priority
+                          , Due
+                          , Serialize },
+        ok   = Store:put(encode_key(Info), Task),
         ok   = gen_server:cast(Daddy, {enqueued, {erlang:self(), Info}}),
         _    = gen_server:reply(From, ok) %tell caller we are done
     end).
 
+encode_key({R,K,P,D,S}) ->
+  << (to_hex(R))/binary
+   , "-", (to_hex(K))/binary
+   , "-", (to_hex(P))/binary
+   , "-", (to_hex(D))/binary
+   , "-", S/binary>>.
+
+rand_int() ->
+  crypto:rand_uniform(1 bsl 28, 1 bsl 32).
+
+decode_key(Bin) ->
+  [R, K, P, D, S] = binary:split(Bin, <<"-">>, [global]),
+  {from_hex(R), from_hex(K), from_hex(P), from_hex(D), S}.
+
+from_hex(Binary) ->
+  list_to_integer(binary_to_list(Binary), 16).
+
+to_hex(Int) ->
+  list_to_binary(integer_to_list(Int, 16)).
+
 %%%_* Tests ============================================================
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+
+key_test() ->
+  R = rand_int(),
+  K = s2_time:stamp(),
+  P = 3,
+  D = s2_time:stamp() div 1000,
+  S = <<"blargh">>,
+  {R,K,P,D,S} = decode_key(encode_key({R,K,P,D,S})).
 
 basic_test() ->
   yamq_test:run(
@@ -396,10 +460,11 @@ queue_test_() ->
 init_test() ->
   {ok, _} = yamq_dets_store:start_link("x.dets"),
   lists:foreach(fun(N) ->
+                    R  = random:uniform(1000),
                     K  = s2_time:stamp(),
                     P  = random:uniform(8),
                     D  = random:uniform(1000),
-                    ok = yamq_dets_store:put({K,P,D,[]}, N)
+                    ok = yamq_dets_store:put(encode_key({R,K,P,D,<<"foo">>}), N)
                 end, lists:seq(1, 100)),
   {ok, _} = yamq:start_link([{workers, 1},
                              {func, fun(_) -> ok end},
@@ -435,9 +500,9 @@ store_fail_test() ->
 serialize_test() ->
   yamq_test:run(
     fun() ->
-        yamq:enqueue(serialize_test1, [{serialize, foo}, {priority, 3}]),
-        yamq:enqueue(serialize_test2, [{serialize, foo}, {priority, 2}]),
-        yamq:enqueue(serialize_test3, [{serialize, foo}, {priority, 1}]),
+        yamq:enqueue(serialize_test1, [{serialize, <<"foo">>}, {priority, 3}]),
+        yamq:enqueue(serialize_test2, [{serialize, <<"foo">>}, {priority, 2}]),
+        yamq:enqueue(serialize_test3, [{serialize, <<"foo">>}, {priority, 1}]),
         timer:sleep(1000)
     end, [{func, fun(_X) ->
                      erlang:register(serialize_test, self()),
