@@ -101,8 +101,8 @@ handle_call({enqueue, Task, Options} = C, From, #s{store=Store} = S) ->
 handle_call(size, _From, S) ->
   ?debug("handle_call: size"),
   {reply, q_size(S#s.blocked), S, wait(S#s.wfree, S#s.heads)};
-handle_call(state, _From, S) -
-  ?debug("handle_call: state"),>
+handle_call(state, _From, S) ->
+  ?debug("handle_call: state"),
   %% Return state for debugging purposes
   State = [ {store, S#s.store}
           , {func, S#s.func}
