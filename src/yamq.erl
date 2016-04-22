@@ -164,7 +164,7 @@ handle_info(timeout, S) ->
   ?hence(S#s.wfree > 0),
   case q_next(S#s.heads, S#s.blocked) of
     {ok, {Info, Heads, Blocked}} ->
-      ?debug"next: ~p", [Info]),
+      ?debug("next: ~p", [Info]),
       Pid   = spawn_worker(S#s.store, S#s.func, Info),
       N     = S#s.wfree - 1,
       {noreply, S#s{wfree   = N,
