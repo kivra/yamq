@@ -28,6 +28,8 @@
         , enqueue/1
         , enqueue/2
         , size/0
+        , encode_key/1
+        , decode_key/1
         ]).
 
 %% gen_server
