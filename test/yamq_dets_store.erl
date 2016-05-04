@@ -17,6 +17,9 @@
         , put/2
         , delete/1
         , list/0
+        , generate_info/3
+        , encode_key/1
+        , decode_key/1
         ]).
 
 -export([ init/1
@@ -35,6 +38,9 @@ get(K)           -> gen_server:call(?MODULE, {get, K}, infinity).
 put(K,V)         -> gen_server:call(?MODULE, {put, K,V}, infinity).
 delete(K)        -> gen_server:call(?MODULE, {delete, K}, infinity).
 list()           -> gen_server:call(?MODULE, list, infinity).
+generate_info(P, D, S) -> {0, 0, P, D, S}.
+encode_key(K)    -> K.
+decode_key(K)    -> K.
 
 %%%_ * gen_server ------------------------------------------------------
 init([File]) ->
