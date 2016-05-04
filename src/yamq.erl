@@ -346,7 +346,7 @@ spawn_store(Store, Task, Options, From) ->
         {ok, Priority}  = s2_lists:assoc(Options, priority),
         {ok, Due}       = s2_lists:assoc(Options, due),
         {ok, Serialize} = s2_lists:assoc(Options, serialize),
-        Info = Store:generate_key(Priority, Due, Serialize),
+        Info = Store:generate_info(Priority, Due, Serialize),
         ok   = Store:put(Store:encode_key(Info), Task),
         ok   = gen_server:cast(Daddy, {enqueued, {erlang:self(), Info}}),
         _    = gen_server:reply(From, ok) %tell caller we are done
