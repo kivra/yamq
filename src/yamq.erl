@@ -379,15 +379,12 @@ reload_test() ->
   yamq_test:run(
     fun() ->
         ok = yamq:reload(),
-        ok = yamq:enqueue(enqueue, [{priority, 1}, {due, 2000}]),
-        1  = yamq:size(),
+        ok = yamq:enqueue(enqueue, [{priority, 1}, {due, 3000}]),
         ok = yamq:reload(),
-        1  = yamq:size(),
         ok = yamq_dets_store:put({0, s2_time:stamp(), 1, 0, <<"foo">>}, reload),
-        1  = yamq:size(),
         ok = yamq:reload(),
-        2  = yamq:size(),
-        receive_in_order([reload, enqueue])
+        receive_in_order([reload, enqueue]),
+        0  = yamq:size()
     end).
 
 delay1_test() ->
