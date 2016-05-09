@@ -116,9 +116,12 @@ handle_call(size, _From, S) ->
   {reply, q_size(S#s.blocked), S, wait(S#s.wfree, S#s.heads)};
 handle_call(reload, _From, S) ->
   ?debug("handle_call: reload"),
-  ok = q_clear(),
-  _  = q_load(S#s.store),
-  {reply, ok, S, wait(S#s.wfree, S#s.heads)};
+  Before = q_size(S#s.blocked),
+  ok     = q_clear(),
+  Heads  = q_load(S#s.store),
+  After  = q_size(S#s.blocked),
+  ?info("yamq reloaded (before: ~p, after: ~p)", [Before, After]),
+  {reply, ok, S#s{heads = Heads}, wait(S#s.wfree, Heads)};
 handle_call(state, _From, S) ->
   ?debug("handle_call: state"),
   %% Return state for debugging purposes
