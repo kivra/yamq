@@ -38,7 +38,7 @@ get(K)           -> gen_server:call(?MODULE, {get, K}, infinity).
 put(K,V)         -> gen_server:call(?MODULE, {put, K,V}, infinity).
 delete(K)        -> gen_server:call(?MODULE, {delete, K}, infinity).
 list()           -> gen_server:call(?MODULE, list, infinity).
-generate_info(P, D, S) -> {0, 0, P, D, S}.
+generate_info(P, D, S) -> {s2_rand:int(), s2_time:stamp(), P, D, S}.
 encode_key(K)    -> K.
 decode_key(K)    -> K.
 
