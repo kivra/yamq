@@ -28,6 +28,7 @@
         , enqueue/1
         , enqueue/2
         , size/0
+        , reload/0
         ]).
 
 %% gen_server
@@ -38,6 +39,11 @@
         , handle_info/2
         , code_change/3
         ]).
+
+-export_type([priority/0]).
+-export_type([due/0]).
+-export_type([info/0]).
+-export_type([key/0]).
 
 %%%_* Includes =========================================================
 -include_lib("stdlib2/include/prelude.hrl").
@@ -53,21 +59,28 @@
            , blocked = dict:new()   %blocked (serialized) tasks
            }).
 
+-type priority() :: 1..8.
+-type due()      :: integer().
+-type info()     :: {integer(), integer(), priority(), due(), any()}.
+-type key()      :: binary().
 %%%_ * API -------------------------------------------------------------
 start_link(Args) ->
   gen_server:start_link({local, ?MODULE}, ?MODULE, Args, []).
 
 stop() ->
-  gen_server:call(?MODULE, stop, infinity).
+  gen_server:call(?MODULE, stop).
 
 enqueue(Task) ->
   enqueue(Task, []).
 
 enqueue(Task, Options) ->
-  gen_server:call(?MODULE, {enqueue, Task, opt_parse(Options)}, infinity).
+  gen_server:call(?MODULE, {enqueue, Task, opt_parse(Options)}).
 
 size() ->
-  gen_server:call(?MODULE, size, infinity).
+  gen_server:call(?MODULE, size).
+
+reload() ->
+  gen_server:call(?MODULE, reload).
 
 %%%_ * gen_server callbacks --------------------------------------------
 init(Args) ->
@@ -101,6 +114,14 @@ handle_call({enqueue, Task, Options} = C, From, #s{store=Store} = S) ->
 handle_call(size, _From, S) ->
   ?debug("handle_call: size"),
   {reply, q_size(S#s.blocked), S, wait(S#s.wfree, S#s.heads)};
+handle_call(reload, _From, S) ->
+  ?debug("handle_call: reload"),
+  Before = q_size(S#s.blocked),
+  ok     = q_clear(),
+  Heads  = q_load(S#s.store),
+  After  = q_size(S#s.blocked),
+  ?info("yamq reloaded (before: ~p, after: ~p)", [Before, After]),
+  {reply, ok, S#s{heads = Heads}, wait(S#s.wfree, Heads)};
 handle_call(state, _From, S) ->
   ?debug("handle_call: state"),
   %% Return state for debugging purposes
@@ -201,10 +222,13 @@ q_init() ->
                     Q = ets:new(Q, [ordered_set, private, named_table])
                 end, ?QS).
 
+q_clear() ->
+  lists:foreach(fun(Q) -> ets:delete_all_objects(Q) end, ?QS).
+
 q_load(Store) ->
   {ok, Keys} = Store:list(),
   lists:foldl(
-    fun(Info, Heads) -> q_insert(decode_key(Info), Heads) end, [], Keys).
+    fun(Info, Heads) -> q_insert(Store:decode_key(Info), Heads) end, [], Keys).
 
 q_insert({R,K,P,D,S}, Heads0) ->
   Queue = q_p2q(P),
@@ -304,7 +328,7 @@ spawn_worker(Store, Fun, Info) ->
   Daddy = erlang:self(),
   erlang:spawn_link(
     fun() ->
-        Key = encode_key(Info),
+        Key = Store:encode_key(Info),
         case Store:get(Key) of
           {ok, Task} ->
             ok = Fun(Task),
@@ -325,47 +349,15 @@ spawn_store(Store, Task, Options, From) ->
         {ok, Priority}  = s2_lists:assoc(Options, priority),
         {ok, Due}       = s2_lists:assoc(Options, due),
         {ok, Serialize} = s2_lists:assoc(Options, serialize),
-        Info            = { rand_int()
-                          , s2_time:stamp()
-                          , Priority
-                          , Due
-                          , Serialize },
-        ok   = Store:put(encode_key(Info), Task),
+        Info = Store:generate_info(Priority, Due, Serialize),
+        ok   = Store:put(Store:encode_key(Info), Task),
         ok   = gen_server:cast(Daddy, {enqueued, {erlang:self(), Info}}),
         _    = gen_server:reply(From, ok) %tell caller we are done
     end).
 
-encode_key({R,K,P,D,S}) ->
-  << (to_hex(R))/binary
-   , "-", (to_hex(K))/binary
-   , "-", (to_hex(P))/binary
-   , "-", (to_hex(D))/binary
-   , "-", S/binary>>.
-
-rand_int() ->
-  crypto:rand_uniform(1 bsl 28, 1 bsl 32).
-
-decode_key(Bin) ->
-  [R, K, P, D, S] = binary:split(Bin, <<"-">>, [global]),
-  {from_hex(R), from_hex(K), from_hex(P), from_hex(D), S}.
-
-from_hex(Binary) ->
-  list_to_integer(binary_to_list(Binary), 16).
-
-to_hex(Int) ->
-  list_to_binary(integer_to_list(Int, 16)).
-
 %%%_* Tests ============================================================
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
-
-key_test() ->
-  R = rand_int(),
-  K = s2_time:stamp(),
-  P = 3,
-  D = s2_time:stamp() div 1000,
-  S = <<"blargh">>,
-  {R,K,P,D,S} = decode_key(encode_key({R,K,P,D,S})).
 
 basic_test() ->
   yamq_test:run(
@@ -384,6 +376,18 @@ size_test() ->
         1  = yamq:size(),
         ok = yamq:enqueue({size, 2}, [{priority, 4}, {due, 500}]),
         2  = yamq:size()
+    end).
+
+reload_test() ->
+  yamq_test:run(
+    fun() ->
+        ok = yamq:reload(),
+        ok = yamq:enqueue(enqueue, [{priority, 1}, {due, 3000}]),
+        ok = yamq:reload(),
+        ok = yamq_dets_store:put({0, s2_time:stamp(), 1, 0, <<"foo">>}, reload),
+        ok = yamq:reload(),
+        receive_in_order([reload, enqueue]),
+        0  = yamq:size()
     end).
 
 delay1_test() ->
@@ -464,7 +468,7 @@ init_test() ->
                     K  = s2_time:stamp(),
                     P  = random:uniform(8),
                     D  = random:uniform(1000),
-                    ok = yamq_dets_store:put(encode_key({R,K,P,D,<<"foo">>}), N)
+                    ok = yamq_dets_store:put({R,K,P,D,<<"foo">>}, N)
                 end, lists:seq(1, 100)),
   {ok, _} = yamq:start_link([{workers, 1},
                              {func, fun(_) -> ok end},
