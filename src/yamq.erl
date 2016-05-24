@@ -214,7 +214,7 @@ wait(_WFree, [{_QS,DS}|Hs]) ->
                       ({_Q,_D},Acc)              -> Acc
                    end, DS, Hs) of
     0   -> 0;
-    Min -> max(0, ((Min - s2_time:stamp()) div 1000)+1)
+    Min -> max(0, ((Min - (s2_time:stamp() div 1000)) div 1000)+1)
   end.
 
 q_init() ->
