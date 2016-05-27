@@ -36,8 +36,6 @@
 -callback exec(any(), list()) -> {ok, _} | {error, _}.
 
 %%%_* Macros ===========================================================
-%% Number of attepts done, will always hit atleast two different servers
--define(ATTEMPTS, 2).
 %% Interval on which failures are calculated (milliseconds)
 -define(INTERVAL, 600000).
 %% Number of errors before node will be taken out of cluster, 0-N
@@ -117,7 +115,7 @@ handle_call({call, Args, Options}, From, #s{cluster_up=[{Node,Info}|Up]} = S) ->
   Req = #r{ args     = Args
           , from     = From
           , node     = Node
-          , attempts = s2_lists:assoc(Options, attempts, ?ATTEMPTS)
+          , attempts = s2_lists:assoc(Options, attempts, length(Up)+1)
           },
   {noreply, S#s{ cluster_up = Up ++ [{Node,Info}] %round robin lb
                , reqs       = dict:store(Pid, Req, S#s.reqs)}};
@@ -320,9 +318,11 @@ automatic_unblock_test_() ->
                               ]),
        ok                    = block(Ref, baz),
        {error, error}        = call(Ref, [error]),
+       {error, error}        = call(Ref, [error]),
        {error, cluster_down} = call(Ref, [ok]),
        timer:sleep(10000),
        {ok, ok}              = call(Ref, [ok]),
+       {error, error}        = call(Ref, [error]),
        {error, error}        = call(Ref, [error]),
        {error, cluster_down} = call(Ref, [ok]),
        ok                    = stop(Ref)
@@ -331,7 +331,7 @@ automatic_unblock_test_() ->
 retry_test() ->
   {ok, Ref} = start_link(retry,
                          [{cb_mod, gen_lb_test},
-                          {cluster, [crash, good]}]),
+                          {cluster, [crash, crash, crash, good]}]),
   {ok, ok}  = call(Ref, [ok]),
   ok        = stop(Ref).
 
