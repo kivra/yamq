@@ -74,13 +74,13 @@ enqueue(Task) ->
   enqueue(Task, []).
 
 enqueue(Task, Options) ->
-  gen_server:call(?MODULE, {enqueue, Task, opt_parse(Options)}).
+  gen_server:call(?MODULE, {enqueue, Task, opt_parse(Options)}, infinity).
 
 size() ->
-  gen_server:call(?MODULE, size).
+  gen_server:call(?MODULE, size, infinity).
 
 reload() ->
-  gen_server:call(?MODULE, reload).
+  gen_server:call(?MODULE, reload, infinity).
 
 %%%_ * gen_server callbacks --------------------------------------------
 init(Args) ->
