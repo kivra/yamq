@@ -232,7 +232,12 @@ q_load(Store) ->
 
 q_insert({R,K,P,D,S}, Heads0) ->
   Queue = q_p2q(P),
-  true  = ets:insert_new(Queue, {{D,K,R},S}),
+  case ets:insert_new(Queue, {{D,K,R},S}) of
+    true  -> ok;
+    false ->
+      S2 = ets:lookup(Queue, {D,K,R}),
+      ?error("Failed to insert: ~p (found: ~p)", [{{D,K,R},S}, S2])
+  end,
   case lists:keytake(Queue, 1, Heads0) of
     {value, {Queue,DP}, _Heads} when DP =< D -> Heads0;
     {value, {Queue,DP},  Heads} when DP >= D -> [{Queue,D}|Heads];
