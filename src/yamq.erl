@@ -102,7 +102,15 @@ terminate(Rsn, S) ->
   ?info("waiting for ~p workers to finish", [length(S#s.wpids)]),
   ?info("waiting for ~p enqueue requests to finish", [length(S#s.spids)]),
   lists:foreach(fun(Pid) ->
-                    receive {'EXIT', Pid, _Rsn} -> ok end
+                    receive
+                      {'EXIT', Pid, _Rsn} ->
+                        ?info("worker exit: ~p", [Pid]),
+                        ok
+                    after 30000 ->
+                        %% Avoid deadlock
+                        ?info("worker timeout: ~p", [Pid]),
+                        ok
+                    end
                 end,
                 S#s.wpids ++ S#s.spids),
   ?info("terminated").
