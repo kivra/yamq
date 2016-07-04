@@ -243,8 +243,13 @@ q_insert({R,K,P,D,S}, Heads0) ->
   case ets:insert_new(Queue, {{D,K,R},S}) of
     true  -> ok;
     false ->
-      S2 = ets:lookup(Queue, {D,K,R}),
-      ?error("Failed to insert: ~p (found: ~p)", [{{D,K,R},S}, S2])
+      case ets:lookup(Queue, {D,K,R}) of
+        S ->
+          %% This is fine
+          ok;
+        S2 ->
+          ?error("Failed to insert: ~p (found: ~p)", [{{D,K,R},S}, S2])
+      end
   end,
   case lists:keytake(Queue, 1, Heads0) of
     {value, {Queue,DP}, _Heads} when DP =< D -> Heads0;
