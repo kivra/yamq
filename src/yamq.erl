@@ -115,8 +115,8 @@ terminate(Rsn, S) ->
                 S#s.wpids ++ S#s.spids),
   ?info("terminated").
 
-handle_call({enqueue, Task, Options} = C, From, #s{store=Store} = S) ->
-  ?debug("handle_call: ~p", [C]),
+handle_call({enqueue, Task, Options} = _C, From, #s{store=Store} = S) ->
+  ?debug("handle_call: ~p", [_C]),
   Pid = spawn_store(Store, Task, Options, From),
   {noreply, S#s{spids=[Pid|S#s.spids]}, wait(S#s.wfree, S#s.heads)};
 handle_call(size, _From, S) ->
@@ -146,13 +146,13 @@ handle_call(stop, _From, S) ->
   ?debug("handle_call: stop"),
   {stop, normal, ok, S}.
 
-handle_cast({enqueued, {Pid, Info}} = C, S) ->
-  ?debug("handle_cast: ~p", [C]),
+handle_cast({enqueued, {Pid, Info}} = _C, S) ->
+  ?debug("handle_cast: ~p", [_C]),
   ?hence(lists:member(Pid, S#s.spids)),
   Heads = q_insert(Info, S#s.heads),
   {noreply, S#s{heads=Heads}, wait(S#s.wfree, Heads)};
-handle_cast({done, {Pid, Info}} = C, S) ->
-  ?debug("handle_cast: ~p", [C]),
+handle_cast({done, {Pid, Info}} = _C, S) ->
+  ?debug("handle_cast: ~p", [_C]),
   ?hence(lists:member(Pid, S#s.wpids)),
   {Heads0, Blocked0} = q_unblock(Info, S#s.heads, S#s.blocked),
   case q_next(Heads0, Blocked0) of
@@ -171,16 +171,16 @@ handle_cast(Msg, S) ->
   ?debug("handle_cast: ~p", [Msg]),
   {stop, {bad_cast, Msg}, S}.
 
-handle_info({'EXIT', Pid, normal} = C, S) ->
-  ?debug("handle_info: ~p", [C]),
+handle_info({'EXIT', Pid, normal} = _C, S) ->
+  ?debug("handle_info: ~p", [_C]),
   case {lists:member(Pid, S#s.wpids), lists:member(Pid, S#s.spids)} of
     {true, false} ->
       {noreply, S#s{wpids=S#s.wpids -- [Pid]}, wait(S#s.wfree, S#s.heads)};
     {false, true} ->
       {noreply, S#s{spids=S#s.spids -- [Pid]}, wait(S#s.wfree, S#s.heads)}
   end;
-handle_info({'EXIT', Pid, Rsn} = C, S) ->
-  ?debug("handle_info: ~p", [C]),
+handle_info({'EXIT', Pid, Rsn} = _C, S) ->
+  ?debug("handle_info: ~p", [_C]),
   case {lists:member(Pid, S#s.spids), lists:member(Pid, S#s.wpids)} of
     {true, false} ->
       ?warning("writer died: ~p", [Rsn]),
