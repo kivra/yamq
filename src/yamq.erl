@@ -244,7 +244,7 @@ q_insert({R,K,P,D,S}, Heads0) ->
     true  -> ok;
     false ->
       case ets:lookup(Queue, {D,K,R}) of
-        S ->
+        [S] ->
           %% This is fine
           ok;
         S2 ->
