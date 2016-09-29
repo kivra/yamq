@@ -244,11 +244,11 @@ q_insert({R,K,P,D,S}, Heads0) ->
     true  -> ok;
     false ->
       case ets:lookup(Queue, {D,K,R}) of
-        [S] ->
+        [{{D,K,R},S}] ->
           %% This is fine
           ok;
-        S2 ->
-          ?error("Failed to insert: ~p (found: ~p)", [{{D,K,R},S}, S2])
+        Found ->
+          ?error("Failed to insert: ~p (found: ~p)", [{{D,K,R},S}, Found])
       end
   end,
   case lists:keytake(Queue, 1, Heads0) of
