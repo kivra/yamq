@@ -2,7 +2,11 @@
  [ {description,  "yamq"}
  , {vsn,          "git"}
  , {registered,   []}
- , {applications, [kernel, stdlib]}
+ , {applications, [ kernel
+                  , stdlib
+                  , stdlib2
+                  , lager
+                  ]}
  , {env,          []}
  , {modules,      []}
  ]
