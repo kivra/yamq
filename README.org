@@ -1,88 +1,5 @@
 * Overview
 Small collection of utilities that hasn't yet justified their own repositories.
-** gen_lb
-A simple loadbalancer / circuitbreaker
-
-Used between services in a SOA, loadbalances requests over multiple nodes,
-automatically removes failing nodes and stops cascading failures.
-
-*** Example
-#+BEGIN_SRC Erlang
-{ok, _} = gen_lb:start_link(service_x,
-                            [ %% nodes in this cluster
-                              {cluster, ["node1","node2","node3"]}
-                              %% module implementing the actual code
-                              %% communicating with cluster
-                            , {cb_mod, testmod}
-                              %% interval upon which failures are
-                              %% calculated (ms)
-                            , {interval, 600000} %10 min
-                              %% max errors during interval that a node can
-                              %% experience before being taken out of rotation
-                            , {max_errors, 2}
-                              %% max crasches during interval that a node can
-                              %% experience before being taken out of rotation
-                            , {max_crasches, 1}
-                              %% Time a blocked node will be kept out of cluster
-                              %% before being automatically inserted again
-                            , {block_time, 300000} %5 min
-                            ]),
-
-%% call service_x that can be handled by node[123]. gen_lb keeps track
-%% of crasches, failures, load-balancing etc.
-case gen_lb:call(service_x, do_something,
-                 [ %% do up to two attempts (ie: if the first fail do another).
-                   %% multiple attempts will always hit atleast two nodes
-                   {attempts, 2}
-                 ]) of
-  {ok, Res} ->
-    %% everything went good
-    {ok, Res};
-  {error, cluster_down} ->
-    %% all nodes in the cluster are down (previous crasches/errors)
-    %% nothing we can do except wait until they are automatically reinserted
-    {error, cluster_down};
-  {error, Rsn} ->
-    %% call failed for whatever reason.
-    %% the failure is stored in gen_lb and might result in node being taken
-    %% out of rotation
-    {error, Rsn}
-end.
-
-%% manually block a node (infinite time)
-gen_lb:block(service_x, "node1").
-
-%% manually unblock a node
-gen_lb:unblock(service_x, "node1").
-#+END_SRC
-
-Callback module testmod.erl
-#+BEGIN_SRC Erlang
--module(testmod).
--behaviour(gen_lb).
-
--export([exec/2]).
-
-exec(Node, Args) ->
-  %% do the actual call to the node selected by gen_lb
-  case do_something(Node, Args) of
-    {ok, Res} ->
-      {ok, Res};
-    {error, Rsn} ->
-      %% we failed, this will increment number of errors on this node.
-      %% request will possibly be retried with another node
-      {error, Rsn}
-  end.
-#+END_SRC
-
-*** Todo
-All requests go through a gen_server, nodes can be kept in an ETS-table
-in order to avoid this.
-
-Better support for timeouts
-
-More metrics
-
 ** yamq
 A persistant priority queue with the ability to set 'due' time on enqueued items.
 
@@ -154,7 +71,3 @@ Some rough estimates can be found in test/perf1.erl.
 My thinkpad x230 handled several million entries with a due time from now to
 +6 months without any problems which is more than good enough for my
 usecase.
-
-
-
-
