@@ -107,7 +107,7 @@ init(Args) ->
 terminate(_Rsn, S) ->
   {ok, cancel} = timer:cancel(S#s.tref),
   lists:foreach(fun(Pid) ->
-                    receive {'EXIT', Pid, _Rsn} -> ok end
+                    receive {'EXIT', Pid, _} -> ok end
                 end, dict:fetch_keys(S#s.reqs)).
 
 handle_call({call, _Args, _Options}, _From, #s{cluster_up=[]} = S) ->
