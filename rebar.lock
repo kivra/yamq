@@ -1,12 +1,16 @@
-[{<<"goldrush">>,
-  {git,"git://github.com/DeadZen/goldrush.git",
-       {ref,"64864ba7fcf40988361340e48680b49a2c2938cf"}},
-  1},
+{"1.2.0",
+[{<<"goldrush">>,{pkg,<<"goldrush">>,<<"0.1.9">>},1},
  {<<"lager">>,
   {git,"git@github.com:kivra/lager.git",
-       {ref,"cbf6679c6a693772fd1629c9cdc093e4c6c4ebf8"}},
+       {ref,"459a3b2cdd9eadd29e5a7ce5c43932f5ccd6eb88"}},
   0},
  {<<"stdlib2">>,
   {git,"git@github.com:kivra/stdlib2.git",
-       {ref,"273309008d2fc0874f8c155a22684d16de44a043"}},
-  0}].
+       {ref,"e96e4a14ddf26df92ad83e66a853e9b979990a66"}},
+  0}]}.
+[
+{pkg_hash,[
+ {<<"goldrush">>, <<"F06E5D5F1277DA5C413E84D5A2924174182FB108DABB39D5EC548B27424CD106">>}]},
+{pkg_hash_ext,[
+ {<<"goldrush">>, <<"99CB4128CFFCB3227581E5D4D803D5413FA643F4EB96523F77D9E6937D994CEB">>}]}
+].
