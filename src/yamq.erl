@@ -468,8 +468,8 @@ queue_test_() ->
             fun() ->
                 L = lists:foldl(
                       fun(N, Acc) ->
-                          P  = random:uniform(8),
-                          D  = random:uniform(5000),
+                          P  = rand:uniform(8),
+                          D  = rand:uniform(5000),
                           ok = yamq:enqueue({queue_test, N}, [{priority,P},
                                                               {due,D}]),
                           [{queue_test, N}|Acc]
@@ -482,10 +482,10 @@ queue_test_() ->
 init_test() ->
   {ok, _} = yamq_dets_store:start_link("x.dets"),
   lists:foreach(fun(N) ->
-                    R  = random:uniform(1000),
+                    R  = rand:uniform(1000),
                     K  = s2_time:stamp(),
-                    P  = random:uniform(8),
-                    D  = random:uniform(1000),
+                    P  = rand:uniform(8),
+                    D  = rand:uniform(1000),
                     ok = yamq_dets_store:put({R,K,P,D,<<"foo">>}, N)
                 end, lists:seq(1, 100)),
   {ok, _} = yamq:start_link([{workers, 1},
