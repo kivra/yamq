@@ -1,16 +1,4 @@
-{"1.2.0",
-[{<<"goldrush">>,{pkg,<<"goldrush">>,<<"0.1.9">>},1},
- {<<"lager">>,
-  {git,"git@github.com:kivra/lager.git",
-       {ref,"459a3b2cdd9eadd29e5a7ce5c43932f5ccd6eb88"}},
-  0},
- {<<"stdlib2">>,
+[{<<"stdlib2">>,
   {git,"git@github.com:kivra/stdlib2.git",
        {ref,"e96e4a14ddf26df92ad83e66a853e9b979990a66"}},
-  0}]}.
-[
-{pkg_hash,[
- {<<"goldrush">>, <<"F06E5D5F1277DA5C413E84D5A2924174182FB108DABB39D5EC548B27424CD106">>}]},
-{pkg_hash_ext,[
- {<<"goldrush">>, <<"99CB4128CFFCB3227581E5D4D803D5413FA643F4EB96523F77D9E6937D994CEB">>}]}
-].
+  0}].
