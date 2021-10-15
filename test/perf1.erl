@@ -10,13 +10,13 @@ run() ->
     {ok, _} = yamq_dets_store:start_link("blah.dets"),
     io:format("Generating 4M keys due within next 6 months spread out on all priorities~n"),
     lists:foreach(fun(N) ->
-                          ok = yamq_dets_store:put({s2_time:stamp(), (N rem 8)+1,
+                          ok = yamq_dets_store:put({os:system_time(microsecond), (N rem 8)+1,
                                                     rand:uniform(86400 * 30 * 60 * 1000)},
-                                                   crypto:rand_bytes(20))
+                                                   crypto:strong_rand_bytes(20))
                   end, lists:seq(1, 4000000)),
     io:format("Generating 1M keys due now spread out on all priorities~n"),
     lists:foreach(fun(N) ->
-                          ok = yamq_dets_store:put({s2_time:stamp(),(N rem 8)+1,0},crypto:rand_bytes(20))
+                          ok = yamq_dets_store:put({os:system_time(microsecond),(N rem 8)+1,0},crypto:strong_rand_bytes(20))
                   end, lists:seq(1, 1000000)),
     io:format("Starting yamq~n"),
     Daddy = self(),

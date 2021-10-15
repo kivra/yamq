@@ -4,8 +4,6 @@
  , {registered,   []}
  , {applications, [ kernel
                   , stdlib
-                  , stdlib2
-                  , lager
                   ]}
  , {env,          []}
  , {modules,      []}
