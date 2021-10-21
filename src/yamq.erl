@@ -374,10 +374,10 @@ spawn_store(Store, Task, Options, From) ->
         _    = gen_server:reply(From, ok) %tell caller we are done
     end).
 
-assoc(L, K) ->
-  case lists:keyfind(K, 1, L) of
-    {K, V} -> {ok, V};
-    false  -> {error, notfound}
+assoc(List, Key) ->
+  case lists:keyfind(Key, 1, List) of
+    {Key, Value} -> {ok, Value};
+    false        -> {error, notfound}
   end.
 
 %%%_* Tests ============================================================

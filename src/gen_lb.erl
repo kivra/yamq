@@ -279,17 +279,16 @@ cluster_maybe_unblock(Up, Down, BlockTime) ->
       end, Down),
   {Up ++ [{Node, []} || {Node, _Time} <- NewUp], NewDown}.
 
-
-assoc(L, K) ->
-  case lists:keyfind(K, 1, L) of
-    {K, V} -> {ok, V};
-    false  -> {error, notfound}
+assoc(List, Key) ->
+  case lists:keyfind(Key, 1, List) of
+    {Key, Value} -> {ok, Value};
+    false        -> {error, notfound}
   end.
 
-assoc(KVs, K, Def) ->
-  case assoc(KVs, K) of
-    {ok, V}           -> V;
-    {error, notfound} -> Def
+assoc(List, Key, Default) ->
+  case assoc(List, Key) of
+    {ok, Value}       -> Value;
+    {error, notfound} -> Default
   end.
 
 %%%_* Tests ============================================================
