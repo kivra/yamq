@@ -30,7 +30,7 @@
         ]).
 
 %%%_* Includes =========================================================
--include_lib("stdlib2/include/prelude.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 %%%_* Behaviour ========================================================
 -callback exec(any(), list()) -> {ok, _} | {error, _}.
@@ -46,9 +46,6 @@
 -define(MAX_CRASCHES, 1).
 %% Time a blocked node will be kept out of cluster (milliseconds)
 -define(BLOCK_TIME, 600000).
-
-%%%_* Includes =========================================================
--include_lib("stdlib2/include/prelude.hrl").
 
 %%%_* Code =============================================================
 %%%_ * Types -----------------------------------------------------------
@@ -92,16 +89,16 @@ unblock(Ref, Node) ->
 %%%_ * gen_server callbacks --------------------------------------------
 init(Args) ->
   process_flag(trap_exit, true),
-  {ok, Cluster} = s2_lists:assoc(Args, cluster),
-  {ok, CbMod}   = s2_lists:assoc(Args, cb_mod),
+  {ok, Cluster} = assoc(Args, cluster),
+  {ok, CbMod}   = assoc(Args, cb_mod),
   {ok, TRef}    = timer:send_interval(1000, maybe_unblock),
   {ok, #s{ cluster_up   = [{Node,[]} || Node <- Cluster]
          , cb_mod       = CbMod
          , tref         = TRef
-         , interval     = s2_lists:assoc(Args, interval,     ?INTERVAL)
-         , max_errors   = s2_lists:assoc(Args, max_errors,   ?MAX_ERRORS)
-         , max_crasches = s2_lists:assoc(Args, max_crasches, ?MAX_CRASCHES)
-         , block_time   = s2_lists:assoc(Args, block_time,   ?BLOCK_TIME)
+         , interval     = assoc(Args, interval,     ?INTERVAL)
+         , max_errors   = assoc(Args, max_errors,   ?MAX_ERRORS)
+         , max_crasches = assoc(Args, max_crasches, ?MAX_CRASCHES)
+         , block_time   = assoc(Args, block_time,   ?BLOCK_TIME)
          }}.
 
 terminate(_Rsn, S) ->
@@ -117,7 +114,7 @@ handle_call({call, Args, Options}, From, #s{cluster_up=[{Node,Info}|Up]} = S) ->
   Req = #r{ args     = Args
           , from     = From
           , node     = Node
-          , attempts = s2_lists:assoc(Options, attempts, ?ATTEMPTS)
+          , attempts = assoc(Options, attempts, ?ATTEMPTS)
           },
   {noreply, S#s{ cluster_up = Up ++ [{Node,Info}] %round robin lb
                , reqs       = dict:store(Pid, Req, S#s.reqs)}};
@@ -201,7 +198,7 @@ handle_info(maybe_unblock, S) ->
   {noreply, S#s{ cluster_up   = Up
                , cluster_down = Down}};
 handle_info(Msg, S) ->
-  ?warning("~p", [Msg]),
+  ?LOG_WARNING("~p", [Msg]),
   {noreply, S}.
 
 code_change(_OldVsn, S, _Extra) ->
@@ -235,7 +232,7 @@ do_call(CbMod, Args, From, Node) ->
     end).
 
 cluster_add_failure(Up, Node, Type, Interval) ->
-  Now  = s2_time:stamp() div 1000,
+  Now  = os:system_time(millisecond),
   Then = Now - Interval,
   lists:map(
     fun({N, Info0}) ->
@@ -258,29 +255,41 @@ cluster_maybe_block(Up0, Down, MaxErrors, MaxCrasches) ->
                               ({call_crash, _}, {E,C}) -> {E,  C+1}
                            end, {0, 0}, Info) of
             {E, _C} when MaxErrors =/= 0, E >= MaxErrors ->
-              ?warning("blocking ~p (too many errors)", [Node]),
+              ?LOG_WARNING("blocking ~p (too many errors)", [Node]),
               false;
             {_E, C} when MaxCrasches =/= 0, C >= MaxCrasches ->
-              ?warning("blocking ~p (too many crasches)", [Node]),
+              ?LOG_WARNING("blocking ~p (too many crasches)", [Node]),
               false;
             {_, _} ->
               true
           end
       end, Up0),
-  Now = s2_time:stamp() div 1000,
+  Now = os:system_time(millisecond),
   {Up, Down ++ [{Node, Now} || {Node, _Info} <- NewDown]}.
 
 cluster_maybe_unblock(Up, Down, BlockTime) ->
-  Timeout = (s2_time:stamp() div 1000) - BlockTime,
+  Timeout = os:system_time(millisecond) - BlockTime,
   {NewUp, NewDown} =
     lists:partition(
       fun({_Node,  inf })     -> false;
          ({ Node,  Time})
-          when Time < Timeout -> ?warning("unblocking ~p", [Node]),
+          when Time < Timeout -> ?LOG_WARNING("unblocking ~p", [Node]),
                                  true;
          ({_Node, _Time})     -> false
       end, Down),
   {Up ++ [{Node, []} || {Node, _Time} <- NewUp], NewDown}.
+
+assoc(List, Key) ->
+  case lists:keyfind(Key, 1, List) of
+    {Key, Value} -> {ok, Value};
+    false        -> {error, notfound}
+  end.
+
+assoc(List, Key, Default) ->
+  case assoc(List, Key) of
+    {ok, Value}       -> Value;
+    {error, notfound} -> Default
+  end.
 
 %%%_* Tests ============================================================
 -ifdef(TEST).
