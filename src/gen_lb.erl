@@ -81,13 +81,19 @@ call(Ref, Args) ->
   call(Ref, Args, []).
 
 call(Ref, Args, Options0) ->
+  SpanName = case Ref of
+                _ when is_atom(Ref) ->
+                    iolist_to_binary([<<"gen_lb call ">>, atom_to_binary(Ref)]);
+                _ ->
+                    <<"gen_lb call">>
+             end,
   StartOpts = #{ attributes => #{},
                  links => [],
                  is_recording => true,
                  start_time => opentelemetry:timestamp(),
                  kind => ?SPAN_KIND_INTERNAL
                },
-  ?with_span(gen_lb, StartOpts,
+  ?with_span(SpanName, StartOpts,
     fun (_SpanCtx) ->
       Ctx = otel_ctx:get_current(),
       Options = [{otel_ctx, Ctx}] ++ Options0,
