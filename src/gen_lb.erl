@@ -31,6 +31,8 @@
 
 %%%_* Includes =========================================================
 -include_lib("kernel/include/logger.hrl").
+-include_lib("opentelemetry_api/include/opentelemetry.hrl").
+-include_lib("opentelemetry_api/include/otel_tracer.hrl").
 
 %%%_* Behaviour ========================================================
 -callback exec(any(), list()) -> {ok, _} | {error, _}.
@@ -54,6 +56,7 @@
            , args         = throw(args)
            , from         = throw(from)
            , node         = throw(node)
+           , parent_ctx   = throw(parent_ctx)
            }).
 
 -record(s, { cluster_up   = throw(cluster_up)
@@ -77,8 +80,19 @@ stop(Ref) ->
 call(Ref, Args) ->
   call(Ref, Args, []).
 
-call(Ref, Args, Options) ->
-  gen_server:call(Ref, {call, Args, Options}, infinity).
+call(Ref, Args, Options0) ->
+  StartOpts = #{ attributes => #{},
+                 links => [],
+                 is_recording => true,
+                 start_time => opentelemetry:timestamp(),
+                 kind => ?SPAN_KIND_INTERNAL
+               },
+  ?with_span(gen_lb, StartOpts,
+    fun (_SpanCtx) ->
+      Ctx = otel_ctx:get_current(),
+      Options = [{otel_ctx, Ctx}] ++ Options0,
+      gen_server:call(Ref, {call, Args, Options}, infinity)
+    end).
 
 block(Ref, Node) ->
   gen_server:call(Ref, {block, Node}, infinity).
@@ -110,10 +124,12 @@ terminate(_Rsn, S) ->
 handle_call({call, _Args, _Options}, _From, #s{cluster_up=[]} = S) ->
   {reply, {error, cluster_down}, S};
 handle_call({call, Args, Options}, From, #s{cluster_up=[{Node,Info}|Up]} = S) ->
-  Pid = do_call(S#s.cb_mod, Args, From, Node),
+  ParentCtx = proplists:get_value(otel_ctx, Options, undefined),
+  Pid = do_call(S#s.cb_mod, Args, From, Node, ParentCtx),
   Req = #r{ args     = Args
           , from     = From
           , node     = Node
+          , parent_ctx = ParentCtx
           , attempts = assoc(Options, attempts, ?ATTEMPTS)
           },
   {noreply, S#s{ cluster_up = Up ++ [{Node,Info}] %round robin lb
@@ -175,7 +191,7 @@ handle_info({'EXIT', Pid, {Type, Rsn}}, S)
             when N1 =:= Req0#r.node -> [{N2,I2},{N1,I1}|Ns];
           Up1                       -> Up1
         end,
-      NewPid = do_call(S#s.cb_mod, Req0#r.args, Req0#r.from, Node),
+      NewPid = do_call(S#s.cb_mod, Req0#r.args, Req0#r.from, Node, Req0#r.parent_ctx),
       Req = Req0#r{ attempt = Req0#r.attempt + 1
                   , node    = Node
                   },
@@ -205,28 +221,48 @@ code_change(_OldVsn, S, _Extra) ->
   {ok, S}.
 
 %%%_ * Internals -------------------------------------------------------
-do_call(CbMod, Args, From, Node) ->
+do_call(CbMod, Args, From, Node, ParentCtx) ->
+  SpanName = iolist_to_binary([<<"gen_lb exec ">>, atom_to_binary(CbMod)]),
+  StartOpts = #{ attributes => #{},
+                 links => [],
+                 is_recording => true,
+                 start_time => opentelemetry:timestamp(),
+                 kind => ?SPAN_KIND_INTERNAL
+               },
+  SpanCtx = ?start_span(SpanName, StartOpts),
   erlang:spawn_link(
     fun() ->
+        ?set_current_span(SpanCtx),
         Daddy = erlang:self(),
         Ref   = erlang:make_ref(),
         {Pid, MRef} =
           erlang:spawn_monitor(
             fun() ->
+                otel_ctx:attach(ParentCtx),
+                ?set_current_span(SpanCtx),
                 case CbMod:exec(Node, Args) of
-                  ok           -> Daddy ! {Ref, ok};
-                  {ok, Res}    -> Daddy ! {Ref, {ok, Res}};
-                  {error, Rsn} -> Daddy ! {Ref, {error, Rsn}}
+                  ok           ->
+                    Daddy ! {Ref, ok};
+                  {ok, Res}    ->
+                    Daddy ! {Ref, {ok, Res}};
+                  {error, Rsn} ->
+                    Daddy ! {Ref, {error, Rsn}}
                 end
             end),
         receive
           {Ref, ok} ->
-            gen_server:reply(From, ok);
+            gen_server:reply(From, ok),
+            ?end_span();
           {Ref, {ok, Res}} ->
-            gen_server:reply(From, {ok, Res});
+            gen_server:reply(From, {ok, Res}),
+            ?end_span();
           {Ref, {error, Rsn}} ->
+            ?set_status(?OTEL_STATUS_ERROR, <<"call error">>),
+            ?end_span(),
             exit({call_error, Rsn});
           {'DOWN', MRef, process, Pid, Rsn} ->
+            ?set_status(?OTEL_STATUS_ERROR, <<"call crash">>),
+            ?end_span(),
             exit({call_crash, Rsn})
         end
     end).
