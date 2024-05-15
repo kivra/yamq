@@ -228,47 +228,44 @@ code_change(_OldVsn, S, _Extra) ->
 
 %%%_ * Internals -------------------------------------------------------
 do_call(CbMod, Args, From, Node, ParentCtx) ->
-  SpanName = iolist_to_binary([<<"gen_lb exec ">>, atom_to_binary(CbMod)]),
-  StartOpts = #{ attributes => #{},
-                 links => [],
-                 is_recording => true,
-                 start_time => opentelemetry:timestamp(),
-                 kind => ?SPAN_KIND_INTERNAL
-               },
-  SpanCtx = ?start_span(SpanName, StartOpts),
   erlang:spawn_link(
     fun() ->
-        ?set_current_span(SpanCtx),
         Daddy = erlang:self(),
         Ref   = erlang:make_ref(),
         {Pid, MRef} =
           erlang:spawn_monitor(
             fun() ->
-                otel_ctx:attach(ParentCtx),
-                ?set_current_span(SpanCtx),
-                case CbMod:exec(Node, Args) of
-                  ok           ->
-                    Daddy ! {Ref, ok};
-                  {ok, Res}    ->
-                    Daddy ! {Ref, {ok, Res}};
-                  {error, Rsn} ->
-                    Daddy ! {Ref, {error, Rsn}}
-                end
+                _ = otel_ctx:attach(ParentCtx),
+                SpanName = iolist_to_binary([<<"gen_lb exec ">>, atom_to_binary(CbMod)]),
+                StartOpts = #{ attributes => #{},
+                               links => [],
+                               is_recording => true,
+                               start_time => opentelemetry:timestamp(),
+                               kind => ?SPAN_KIND_INTERNAL
+                             },
+                ?with_span(SpanName, StartOpts,
+                    fun(_SpanCtx) ->
+                      case CbMod:exec(Node, Args) of
+                        ok           ->
+                          ?set_status(?OTEL_STATUS_OK, <<"no value">>),
+                          Daddy ! {Ref, ok};
+                        {ok, Res}    ->
+                          ?set_status(?OTEL_STATUS_OK, <<"value">>),
+                          Daddy ! {Ref, {ok, Res}};
+                        {error, Rsn} ->
+                          ?set_status(?OTEL_STATUS_ERROR, <<"call error">>),
+                          Daddy ! {Ref, {error, Rsn}}
+                      end
+                    end)
             end),
         receive
           {Ref, ok} ->
-            gen_server:reply(From, ok),
-            ?end_span();
+            gen_server:reply(From, ok);
           {Ref, {ok, Res}} ->
-            gen_server:reply(From, {ok, Res}),
-            ?end_span();
+            gen_server:reply(From, {ok, Res});
           {Ref, {error, Rsn}} ->
-            ?set_status(?OTEL_STATUS_ERROR, <<"call error">>),
-            ?end_span(),
             exit({call_error, Rsn});
           {'DOWN', MRef, process, Pid, Rsn} ->
-            ?set_status(?OTEL_STATUS_ERROR, <<"call crash">>),
-            ?end_span(),
             exit({call_crash, Rsn})
         end
     end).
