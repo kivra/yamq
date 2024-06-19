@@ -247,13 +247,13 @@ do_call(CbMod, Args, From, Node, ParentCtx) ->
                     fun(_SpanCtx) ->
                       case CbMod:exec(Node, Args) of
                         ok           ->
-                          ?set_status(?OTEL_STATUS_OK, <<"no value">>),
+                          ?set_status(?OTEL_STATUS_OK, <<>>),
                           Daddy ! {Ref, ok};
                         {ok, Res}    ->
-                          ?set_status(?OTEL_STATUS_OK, <<"value">>),
+                          ?set_status(?OTEL_STATUS_OK, <<>>),
                           Daddy ! {Ref, {ok, Res}};
                         {error, Rsn} ->
-                          ?set_status(?OTEL_STATUS_ERROR, <<"call error">>),
+                          ?set_status(?OTEL_STATUS_ERROR, <<>>),
                           Daddy ! {Ref, {error, Rsn}}
                       end
                     end)
