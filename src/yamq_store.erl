@@ -8,13 +8,13 @@
 -module(yamq_store).
 
 %%%_* Types ============================================================
--type maybe(A, B) :: {ok, A} | {error, B}.
+-type 'maybe'(A, B) :: {ok, A} | {error, B}.
 -type whynot(A)   :: ok | {error, A}.
 
 %%%_* Code =============================================================
 %%%_ * Behaviour -------------------------------------------------------
--callback list()                  -> maybe(list(), _).
--callback get(any())              -> maybe(any(), _).
+-callback list()                  -> 'maybe'(list(), _).
+-callback get(any())              -> 'maybe'(any(), _).
 -callback put(any(), any())       -> whynot(_).
 -callback delete(any())           -> whynot(_).
 -callback decode_key(yamq:key())  -> yamq:info().
