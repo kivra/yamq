@@ -31,6 +31,8 @@
 
 %%%_* Includes =========================================================
 -include_lib("kernel/include/logger.hrl").
+-include_lib("opentelemetry_api/include/opentelemetry.hrl").
+-include_lib("opentelemetry_api/include/otel_tracer.hrl").
 
 %%%_* Behaviour ========================================================
 -callback exec(any(), list()) -> {ok, _} | {error, _}.
@@ -54,6 +56,7 @@
            , args         = throw(args)
            , from         = throw(from)
            , node         = throw(node)
+           , parent_ctx   = throw(parent_ctx)
            }).
 
 -record(s, { cluster_up   = throw(cluster_up)
@@ -77,8 +80,25 @@ stop(Ref) ->
 call(Ref, Args) ->
   call(Ref, Args, []).
 
-call(Ref, Args, Options) ->
-  gen_server:call(Ref, {call, Args, Options}, infinity).
+call(Ref, Args, Options0) ->
+  SpanName = case Ref of
+                _ when is_atom(Ref) ->
+                    iolist_to_binary([<<"gen_lb call ">>, atom_to_binary(Ref)]);
+                _ ->
+                    <<"gen_lb call">>
+             end,
+  StartOpts = #{ attributes => #{},
+                 links => [],
+                 is_recording => true,
+                 start_time => opentelemetry:timestamp(),
+                 kind => ?SPAN_KIND_INTERNAL
+               },
+  ?with_span(SpanName, StartOpts,
+    fun (_SpanCtx) ->
+      Ctx = otel_ctx:get_current(),
+      Options = [{otel_ctx, Ctx}] ++ Options0,
+      gen_server:call(Ref, {call, Args, Options}, infinity)
+    end).
 
 block(Ref, Node) ->
   gen_server:call(Ref, {block, Node}, infinity).
@@ -110,10 +130,12 @@ terminate(_Rsn, S) ->
 handle_call({call, _Args, _Options}, _From, #s{cluster_up=[]} = S) ->
   {reply, {error, cluster_down}, S};
 handle_call({call, Args, Options}, From, #s{cluster_up=[{Node,Info}|Up]} = S) ->
-  Pid = do_call(S#s.cb_mod, Args, From, Node),
+  ParentCtx = proplists:get_value(otel_ctx, Options, undefined),
+  Pid = do_call(S#s.cb_mod, Args, From, Node, ParentCtx),
   Req = #r{ args     = Args
           , from     = From
           , node     = Node
+          , parent_ctx = ParentCtx
           , attempts = assoc(Options, attempts, ?ATTEMPTS)
           },
   {noreply, S#s{ cluster_up = Up ++ [{Node,Info}] %round robin lb
@@ -175,7 +197,7 @@ handle_info({'EXIT', Pid, {Type, Rsn}}, S)
             when N1 =:= Req0#r.node -> [{N2,I2},{N1,I1}|Ns];
           Up1                       -> Up1
         end,
-      NewPid = do_call(S#s.cb_mod, Req0#r.args, Req0#r.from, Node),
+      NewPid = do_call(S#s.cb_mod, Req0#r.args, Req0#r.from, Node, Req0#r.parent_ctx),
       Req = Req0#r{ attempt = Req0#r.attempt + 1
                   , node    = Node
                   },
@@ -205,7 +227,7 @@ code_change(_OldVsn, S, _Extra) ->
   {ok, S}.
 
 %%%_ * Internals -------------------------------------------------------
-do_call(CbMod, Args, From, Node) ->
+do_call(CbMod, Args, From, Node, ParentCtx) ->
   erlang:spawn_link(
     fun() ->
         Daddy = erlang:self(),
@@ -213,11 +235,28 @@ do_call(CbMod, Args, From, Node) ->
         {Pid, MRef} =
           erlang:spawn_monitor(
             fun() ->
-                case CbMod:exec(Node, Args) of
-                  ok           -> Daddy ! {Ref, ok};
-                  {ok, Res}    -> Daddy ! {Ref, {ok, Res}};
-                  {error, Rsn} -> Daddy ! {Ref, {error, Rsn}}
-                end
+                _ = otel_ctx:attach(ParentCtx),
+                SpanName = iolist_to_binary([<<"gen_lb exec ">>, atom_to_binary(CbMod)]),
+                StartOpts = #{ attributes => #{},
+                               links => [],
+                               is_recording => true,
+                               start_time => opentelemetry:timestamp(),
+                               kind => ?SPAN_KIND_INTERNAL
+                             },
+                ?with_span(SpanName, StartOpts,
+                    fun(_SpanCtx) ->
+                      case CbMod:exec(Node, Args) of
+                        ok           ->
+                          ?set_status(?OTEL_STATUS_OK, <<>>),
+                          Daddy ! {Ref, ok};
+                        {ok, Res}    ->
+                          ?set_status(?OTEL_STATUS_OK, <<>>),
+                          Daddy ! {Ref, {ok, Res}};
+                        {error, Rsn} ->
+                          ?set_status(?OTEL_STATUS_ERROR, <<>>),
+                          Daddy ! {Ref, {error, Rsn}}
+                      end
+                    end)
             end),
         receive
           {Ref, ok} ->

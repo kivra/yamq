@@ -4,6 +4,7 @@
  , {registered,   []}
  , {applications, [ kernel
                   , stdlib
+                  , opentelemetry_api
                   ]}
  , {env,          []}
  , {modules,      []}
